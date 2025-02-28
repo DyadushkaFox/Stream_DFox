@@ -116,7 +116,7 @@ def check_stream_status():
 class TwitchBot(Client):
 
     def __init__(self):
-        super().__init__(token=TWITCH_OAUTH_TOKEN, client_id=TWITCH_CLIENT_ID)
+        super().__init__(token=TWITCH_OAUTH_TOKEN)
 
     async def event_ready(self):
         print(f'Bot {TWITCH_BOT_USERNAME} is online and ready to chat!')
