@@ -1,46 +1,20 @@
-import requests
 import time
+import requests
 import os
+import random
 from dotenv import load_dotenv
-import twitch
-from random import choice
-import asyncio
-from twitchio import Client
+from twitchio import Client, Message
 
-# Загрузим переменные окружения
+# Загружаем переменные окружения
 load_dotenv('fox.env')
 
-# Данные из переменных окружения
-TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
-TWITCH_OAUTH_TOKEN = os.getenv("TWITCH_OAUTH_TOKEN")
-TWITCH_BOT_USERNAME = os.getenv("TWITCH_BOT_USERNAME")
-TWITCH_CHANNEL_NAME = 'your_twitch_channel_name'  # Укажи имя твоего канала
+# Конфигурация Twitch API и бота
+TWITCH_CLIENT_ID = os.getenv('TWITCH_CLIENT_ID')
+TWITCH_OAUTH_TOKEN = os.getenv('TWITCH_OAUTH_TOKEN')
+TWITCH_BOT_USERNAME = os.getenv('TWITCH_BOT_USERNAME')
+TWITCH_CHANNEL = "Dyadushka_Fox"  # Имя канала
 
-# Запрос на проверку статуса стрима
-def is_streaming():
-    url = f"https://api.twitch.tv/helix/streams?user_login={TWITCH_CHANNEL_NAME}"
-    headers = {
-        'Client-ID': TWITCH_CLIENT_ID,
-        'Authorization': f'Bearer {TWITCH_OAUTH_TOKEN}'
-    }
-    response = requests.get(url, headers=headers)
-    data = response.json()
-    
-    # Проверяем, идет ли стрим
-    if data['data']:
-        return True
-    else:
-        return False
-
-# Инициализация Twitch клиента
-client = Client(
-    token=TWITCH_OAUTH_TOKEN,
-    client_id=TWITCH_CLIENT_ID,
-    prefix="!",
-    initial_channels=[TWITCH_CHANNEL_NAME]
-)
-
-# Список случайных вопросов для создания иллюзии зрителей
+# Список вопросов для чата
 questions = [
     "Какой твой любимый жанр игр?",
     "Что думаешь о последних обновлениях в игре?",
@@ -124,22 +98,50 @@ questions = [
     "Что думаешь о тренде на мультиплеерные игры?"
 ]
 
-# Функция для отправки случайного вопроса в чат
-async def send_random_question():
-    while True:
-        if is_streaming():
-            channel = client.get_channel(TWITCH_CHANNEL_NAME)
-            question = choice(questions)
-            await channel.send(question)
-            await asyncio.sleep(1800)  # Отправляем вопрос каждые 30 минут
-        else:
-            print("Стрим не активен. Ожидание...")
-            await asyncio.sleep(60)  # Проверка статуса стрима каждую минуту
+# Функция для проверки, идет ли стрим
+def check_stream_status():
+    url = f'https://api.twitch.tv/helix/streams?user_login={TWITCH_CHANNEL}'
+    headers = {
+        'Client-ID': TWITCH_CLIENT_ID,
+        'Authorization': f'Bearer {TWITCH_OAUTH_TOKEN}'
+    }
+    response = requests.get(url, headers=headers)
+    data = response.json()
 
-# Запуск бота
-async def start_bot():
-    await client.start()
-    await send_random_question()
+    if data['data']:
+        return True  # Стрим идет
+    return False  # Стрим не идет
 
-if __name__ == "__main__":
-    asyncio.run(start_bot())
+# Основной класс бота
+class TwitchBot(Client):
+
+    def __init__(self):
+        super().__init__(token=TWITCH_OAUTH_TOKEN, client_id=TWITCH_CLIENT_ID)
+
+    async def event_ready(self):
+        print(f'Bot {TWITCH_BOT_USERNAME} is online and ready to chat!')
+        while True:
+            if check_stream_status():  # Проверка, идет ли стрим
+                print("Stream is live! Starting bot...")
+                await self.send_random_question()
+                break  # Бот запустился и будет работать, пока идет стрим
+            else:
+                print("Stream is offline. Waiting for stream to go live...")
+                time.sleep(60)  # Проверяем каждую минуту
+
+    async def send_random_question(self):
+        # Выбираем случайный вопрос
+        question = random.choice(questions)
+        await self.channel.send(question)
+
+    async def event_message(self, message: Message):
+        # Ожидаем сообщений и реагируем
+        print(f'{message.author.name}: {message.content}')
+
+# Функция для запуска бота
+def run_bot():
+    bot = TwitchBot()
+    bot.run()
+
+if __name__ == '__main__':
+    run_bot()
