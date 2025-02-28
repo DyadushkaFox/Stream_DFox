@@ -1,51 +1,44 @@
-import time
-import random
-import os
 import requests
+import time
+import os
 from dotenv import load_dotenv
-import socket
+import twitch
+from random import choice
+import asyncio
+from twitchio import Client
 
-# Загружаем данные из fox.env
-load_dotenv(dotenv_path='fox.env')
+# Загрузим переменные окружения
+load_dotenv('fox.env')
 
-# Токен и данные для Twitch API
-client_id = os.getenv("TWITCH_CLIENT_ID")
-oauth_token = os.getenv("TWITCH_OAUTH_TOKEN")
+# Данные из переменных окружения
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_OAUTH_TOKEN = os.getenv("TWITCH_OAUTH_TOKEN")
+TWITCH_BOT_USERNAME = os.getenv("TWITCH_BOT_USERNAME")
+TWITCH_CHANNEL_NAME = 'your_twitch_channel_name'  # Укажи имя твоего канала
 
-# Получаем список стримеров через API
-def get_streamers():
-    url = "https://api.twitch.tv/helix/streams?first=10"  # Получаем 10 активных стримеров
+# Запрос на проверку статуса стрима
+def is_streaming():
+    url = f"https://api.twitch.tv/helix/streams?user_login={TWITCH_CHANNEL_NAME}"
     headers = {
-        "Client-ID": client_id,
-        "Authorization": f"Bearer {oauth_token}"
+        'Client-ID': TWITCH_CLIENT_ID,
+        'Authorization': f'Bearer {TWITCH_OAUTH_TOKEN}'
     }
     response = requests.get(url, headers=headers)
     data = response.json()
-
-    # Список профилей стримеров
-    profiles = [f"https://www.twitch.tv/{stream['user_name']}" for stream in data['data']]
-    return profiles
-
-# Подключение к чату Twitch через IRC
-def send_message(channel, message):
-    server = "irc.chat.twitch.tv"
-    port = 6667
-    nick = "Bot_DFox"  # Имя бота
-    token = oauth_token
-    channel = f"#{channel}"
-
-    # Подключение к серверу IRC
-    s = socket.socket()
-    s.connect((server, port))
-    s.send(f"PASS {token}\r\n".encode('utf-8'))
-    s.send(f"NICK {nick}\r\n".encode('utf-8'))
-    s.send(f"JOIN {channel}\r\n".encode('utf-8'))
-
-    # Отправка сообщения
-    s.send(f"PRIVMSG {channel} :{message}\r\n".encode('utf-8'))
     
-    # Закрытие соединения
-    s.close()
+    # Проверяем, идет ли стрим
+    if data['data']:
+        return True
+    else:
+        return False
+
+# Инициализация Twitch клиента
+client = Client(
+    token=TWITCH_OAUTH_TOKEN,
+    client_id=TWITCH_CLIENT_ID,
+    prefix="!",
+    initial_channels=[TWITCH_CHANNEL_NAME]
+)
 
 # Список случайных вопросов для создания иллюзии зрителей
 questions = [
@@ -131,29 +124,22 @@ questions = [
     "Что думаешь о тренде на мультиплеерные игры?"
 ]
 
-# Функция для отправки сообщений с интервалом
-def run_bot(channel):
+# Функция для отправки случайного вопроса в чат
+async def send_random_question():
     while True:
-        # Получаем список стримеров
-        profiles = get_streamers()
-
-        if profiles:
-            # Выбираем случайную ссылку на профиль
-            profile_to_send = random.choice(profiles)
-            send_message(channel, f"Check out this profile: {profile_to_send}")
-
-            # Генерация случайного вопроса от зрителей
-            viewer_question = random.choice(questions)
-            send_message(channel, viewer_question)
-
+        if is_streaming():
+            channel = client.get_channel(TWITCH_CHANNEL_NAME)
+            question = choice(questions)
+            await channel.send(question)
+            await asyncio.sleep(1800)  # Отправляем вопрос каждые 30 минут
         else:
-            send_message(channel, "Нет доступных стримеров на данный момент.")
+            print("Стрим не активен. Ожидание...")
+            await asyncio.sleep(60)  # Проверка статуса стрима каждую минуту
 
-        # Ждем 30 минут (1800 секунд)
-        time.sleep(1800)
+# Запуск бота
+async def start_bot():
+    await client.start()
+    await send_random_question()
 
-# Запускаем бота
 if __name__ == "__main__":
-    channel_name = "your_channel_name"  # Укажите ваш канал на Twitch
-    run_bot(channel_name)
-
+    asyncio.run(start_bot())
